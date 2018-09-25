@@ -1,0 +1,5 @@
+<launch>
+    <rosparam command="load" file="$(find lanefinder)/config/config.yaml" />
+
+    <node name="lanefinder_node" pkg="lanefinder" type="lanefinder_node" output="screen"/>
+</launch>

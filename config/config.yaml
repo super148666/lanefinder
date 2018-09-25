@@ -1,0 +1,59 @@
+/lanefinder:
+  image_topic_name: '/right_image'
+  point_topic_name: '/cone'
+  transform_parameter_path: 'config/transform.yaml'
+
+  processing_range_x_up: 1.0
+  processing_range_x_down: 0.0
+  processing_range_y_up: 0.8
+  processing_range_y_down: 0.53
+
+  mag_threshold_up: 1.0
+  mag_threshold_down: 0.6
+  dir_threshold_up: 1.3
+  dir_threshold_down: 0.7
+  asx_threshold_up: 1.0
+  asx_threshold_down: 0.6
+  asy_threshold_up: 0.392156863
+  asy_threshold_down: 0.078431373
+  sat_threshold_up: 1.0
+  sat_threshold_down: 0.784313725
+
+  number_of_lane_points: 30
+# left camera
+#  transform_x_up: 1.0
+#  transform_x_down: 0.0
+#  transform_y_up: 0.8
+#  transform_y_down: 0.5
+#
+#  camera_point_param_1: 0.3
+#  camera_point_param_2: 0.8
+#  camera_point_param_3: 0.53
+#  camera_point_param_4: 0.58
+#
+#  map_point_param_1: 0.43
+#  map_point_param_2: 0.6
+#  map_point_param_3: 0.43
+#  map_point_param_4: 0.6
+
+# right camera
+  transform_x_up: 1.0
+  transform_x_down: 0.0
+  transform_y_up: 0.8
+  transform_y_down: 0.5
+
+  camera_point_param_1: 0.2
+  camera_point_param_2: 0.7
+  camera_point_param_3: 0.47
+  camera_point_param_4: 0.57
+
+  map_point_param_1: 0.40
+  map_point_param_2: 0.6
+  map_point_param_3: 0.40
+  map_point_param_4: 0.6
+
+  x_search_range: 50
+
+  min_road_width: 100
+
+

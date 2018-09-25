@@ -1,0 +1,384 @@
+#include <lane_detection.h>
+#include <visualization_msgs/MarkerArray.h>
+#include <tf/tf.h>
+
+LaneDetector::LaneDetector(ros::NodeHandle n):
+n(n),rate(10)
+{
+    has_lane = false;
+}
+
+LaneDetector::~LaneDetector() {
+
+}
+
+void LaneDetector::Config() {
+    std::string package_name = "lane_detection";
+    std::string parameter_name;
+    std::string *str_ptr = nullptr;
+    int *int_ptr = nullptr;
+    double *double_ptr = nullptr;
+    bool *bool_ptr = nullptr;
+
+    bool status = true;
+    parameter_name = "image_topic_name";
+    str_ptr = &image_topic_name;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *str_ptr);
+
+    parameter_name = "point_topic_name";
+    str_ptr = &point_topic_name;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *str_ptr);
+
+    parameter_name = "transform_parameter_path";
+    str_ptr = &transform_parameter_path;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *str_ptr);
+
+    parameter_name = "processing_range_x_up";
+    double_ptr = &processing_range_x_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "processing_range_x_down";
+    double_ptr = &processing_range_x_down;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "processing_range_y_up";
+    double_ptr = &processing_range_y_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "mag_threshold_up";
+    double_ptr = &mag_threshold_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "mag_threshold_down";
+    double_ptr = &mag_threshold_down;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "dir_threshold_up";
+    double_ptr = &dir_threshold_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "dir_threshold_down";
+    double_ptr = &dir_threshold_down;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "asx_threshold_up";
+    double_ptr = &asx_threshold_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "asx_threshold_down";
+    double_ptr = &asx_threshold_down;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "asy_threshold_up";
+    double_ptr = &asy_threshold_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "asy_threshold_down";
+    double_ptr = &asy_threshold_down;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+
+    parameter_name = "sat_threshold_up";
+    double_ptr = &sat_threshold_up;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+    sat_threshold_up *= 255.0;
+
+    parameter_name = "sat_threshold_down";
+    double_ptr = &sat_threshold_down;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *double_ptr);
+    sat_threshold_down *= 255.0;
+
+    parameter_name = "number_of_lane_points";
+    int_ptr = &number_of_lane_points;
+    status = status && n.getParam("/" + package_name + "/" + parameter_name, *int_ptr);
+
+    //lambda = cv::getPerspectiveTransform(camera_points, map_points);
+    has_new_image = false;
+number_of_lane_points    image_sub = n.subscribe(image_topic_name,1,&LaneDetector::image_received_callback, this);
+    lane_pub = n.advertise<visualization_msgs::MarkerArray>(point_topic_name, 1);
+}
+
+void LaneDetector::Start() {
+    while(ros::ok())
+    {
+        ros::spinOnce();
+        if (!has_new_image)
+            continue;
+        cv::Mat mask(edge());
+        //cv::warpPerspective(mask, mask, lambda, mask.size());
+        int nRows = mask.rows;
+        int nCols = mask.cols;
+
+        left_lane.clear();
+        right_lane.clear();
+        ROS_INFO_STREAM("number of lane points:" << number_of_lane_points);
+        left_lane.reserve(number_of_lane_points);
+        right_lane.reserve(number_of_lane_points);
+        int left_search_center, right_search_center;
+        if (has_lane)
+        {
+            left_search_center = previous_left_start;
+            right_search_center = previous_right_start;
+        }
+        else {
+            std::vector<int> histogram;
+            histogram.resize(nCols,0);
+            uint8_t *p_mask;
+            for(int i = 0; i < nRows; ++i)
+            {
+                p_mask = mask.ptr<uint8_t>(i);
+
+                for (int j = 0; j < nCols; ++j)
+                {
+                    histogram[j] += p_mask[j];
+                }
+            }
+            int max=0;
+            int index=0;
+            for (int i = 0; i < histogram.size()/2; i++)
+            {
+                if (histogram[i] > max)
+                {
+                    max = histogram[i];
+                    index = i;
+                }
+            }
+            left_search_center = index;
+
+            max=0;
+            index=0;
+            for (int i = histogram.size()/2; i < histogram.size(); i++)
+            {
+                if (histogram[i] > max)
+                {
+                    max = histogram[i];
+                    index = i;
+                }
+            }
+            right_search_center = index;
+        }
+
+        ROS_INFO("5");
+        get_lane_points(mask, left_search_center, left_lane);
+        get_lane_points(mask, right_search_center, right_lane);
+
+        ROS_INFO("6");
+        has_lane = true;
+        publish();
+        ROS_INFO("7");
+        has_new_image = false;
+
+    }
+}
+
+void LaneDetector::publish() {
+    visualization_msgs::MarkerArray markers;
+    visualization_msgs::Marker marker_t;
+    marker_t.header.frame_id="laser";
+    marker_t.header.stamp=timestamp;
+    marker_t.action=visualization_msgs::Marker::ADD;
+    marker_t.type=visualization_msgs::Marker::CYLINDER;
+    marker_t.color.r = 1.0;
+    marker_t.scale.x = 0.2;
+    marker_t.scale.y = 0.2;
+    marker_t.scale.z = 0.5;
+    marker_t.lifetime = ros::Duration(rate);
+    int i=0;
+    for(;i<left_lane.size();i++)
+    {
+        visualization_msgs::Marker marker = marker_t;
+        tf::poseTFToMsg(tf::Transform(tf::createQuaternionFromRPY(0.0, 0.0, 0.0),
+                                      tf::Vector3(left_lane[i].x, left_lane[i].y, 0.0)),
+                        marker.pose);
+        marker.id = i;
+        markers.markers.push_back(marker);
+    }
+    ROS_INFO("8");
+    lane_pub.publish(markers);
+    ROS_INFO("9");
+}
+
+void LaneDetector::Stop() {
+
+}
+
+void LaneDetector::image_received_callback(const sensor_msgs::ImageConstPtr msg) {
+    try
+    {
+        auto cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::RGB8);
+        raw_image = cv_ptr->image.clone();
+        raw_image = raw_image(cv::Rect(
+                (int)(raw_image.cols*processing_range_x_down),
+                (int)(raw_image.rows*processing_range_y_down),
+                (int)(raw_image.cols*processing_range_x_up),
+                (int)(raw_image.rows*processing_range_y_up)));
+        cv::cvtColor(raw_image, gray_image, CV_RGB2GRAY);
+        timestamp = msg->header.stamp;
+        has_new_image = true;
+    }
+    catch (cv_bridge::Exception& e)
+    {
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+        return;
+    }
+
+}
+
+cv::Mat LaneDetector::edge() {
+    cv::Mat sx, sy, hls, planes[3];
+    cv::cvtColor(raw_image, hls, CV_RGB2HLS);
+    cv::split(hls, planes);
+    cv::Sobel(gray_image, sx, CV_64F, 1, 0);
+    cv::Sobel(gray_image, sy, CV_64F, 0, 1);
+    ROS_INFO("1");
+    cv::Mat mag(gray_image.rows, gray_image.cols, gray_image.type());
+    ROS_INFO("2");
+    cv::Mat asx(mag), asy(mag), dir(mag), sat(mag), out(mag);
+    ROS_INFO("3");
+    cv::imshow("sx",sx);
+    cv::imshow("sy",sy);
+    cv::waitKey(1);
+    int channels = sx.channels();
+
+    int nRows = sx.rows;
+    int nCols = sx.cols * channels;
+    if (sx.isContinuous())
+    {
+        nCols *= nRows;
+        nRows = 1;
+    }
+    int i,j;
+    double *p_sx, *p_sy;
+    uint8_t *p_sat, *p_mag, *p_asx, *p_asy, *p_dir, *p_sat_out, *p_out;
+    double magnitude, direction;
+    for( i = 0; i < nRows; ++i)
+    {
+        p_sx = sx.ptr<double>(i);
+        p_sy = sy.ptr<double>(i);
+        p_sat = planes[2].ptr<uint8_t>(i);
+        p_asx = asx.ptr<uint8_t>(i);
+        p_asy = asy.ptr<uint8_t>(i);
+        p_mag = mag.ptr<uint8_t>(i);
+        p_dir = dir.ptr<uint8_t>(i);
+        p_sat_out = sat.ptr<uint8_t>(i);
+        p_out = out.ptr<uint8_t>(i);
+
+        for ( j = 0; j < nCols; ++j)
+        {
+            // abs
+            if (p_sx[j] < 0) p_sx[j] = -p_sx[j];
+            if (p_sy[j] < 0) p_sy[j] = -p_sy[j];
+
+            //asx threshold
+            if (p_sx[j] > asx_threshold_down && p_sx[j] < asx_threshold_up)
+            {
+                p_asx[j] = 1;
+            }
+
+            //asy threshold
+            if (p_sy[j] > asy_threshold_down && p_sy[j] < asy_threshold_up)
+            {
+                p_asy[j] = 1;
+            }
+
+            //mag threshold
+            magnitude = sqrt(p_sx[j]*p_sx[j] + p_sy[j]*p_sy[j]);
+            if (magnitude > mag_threshold_down && magnitude < mag_threshold_up)
+            {
+                p_mag[j] = 1;
+            }
+
+            //dir threshold
+            direction = atan2(p_sy[j], p_sx[j]);
+            if (direction > dir_threshold_down && direction < dir_threshold_up)
+            {
+                p_dir[j] = 1;
+            }
+
+            //sat threshold
+            if (p_sat[j] > sat_threshold_down && p_sat[j] < sat_threshold_up)
+            {
+                p_sat_out[j] = 1;
+            }
+
+            p_out[j] = (p_asx[j] | (p_mag[j] & p_dir[j]) | p_sat_out[j]);
+
+        }
+    }
+
+    ROS_INFO("4");
+    return out;
+
+}
+
+void LaneDetector::get_lane_points(cv::Mat mask, int &search_center, std::vector<cv::Point2f> &lane_point) {
+    ROS_INFO("a");
+    lane_point.resize(number_of_lane_points,cv::Point2f(-1,-1));
+    ROS_INFO("b");
+    int nRows = mask.rows;
+    int nCols = mask.cols;
+    bool start = true;
+    int center_x = search_center, center_y = nRows-1 - y_increment/2;
+    int count = 0;
+    for (int y = nRows-1; y >= 0; y -= y_increment)
+    {
+        int x;
+
+        x = center_x - x_search_range/2;
+
+        if (x<0) x=-x;
+        std::vector<int> x_hist;
+        x_hist.resize(x_search_range);
+        std::vector<int> y_hist;
+        y_hist.resize(y_increment);
+        int sum_half = 0;
+        int y_count = 0;
+        uint8_t *p_mask;
+        for(int i=y; i < i-y_increment; i--)
+        {
+            p_mask = mask.ptr<uint8_t>(i);
+            int x_count = 0;
+            for (int j=x; j<j+x_search_range; j++)
+            {
+                if (p_mask[j]) {
+                    x_hist[x_count] += 1;
+                    y_hist[y_count] += 1;
+                    sum_half += 1;
+                }
+                x_count += 1;
+            }
+            y_count += 1;
+        }
+        ROS_INFO("c");
+
+        sum_half = sum_half/2;
+        if (sum_half > 0) {
+            int accum = 0;
+
+            for (int i = 0; i < y_hist.size(); i++) {
+                accum += y_hist[i];
+                if (accum >= sum_half) {
+                    center_y = y - i;
+                }
+            }
+
+            accum = 0;
+            for (int i = 0; i < x_hist.size(); i++) {
+                accum += x_hist[i];
+                if (accum >= sum_half) {
+                    center_x = x + i;
+                }
+            }
+        }
+        ROS_INFO("d");
+        lane_point[count].x = center_x;
+        lane_point[count].y = center_y;
+        count += 1;
+        if (start) {
+            search_center = center_x;
+            start = false;
+        }
+    }
+    ROS_INFO("e");
+}
+
+
