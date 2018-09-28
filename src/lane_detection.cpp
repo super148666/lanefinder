@@ -204,18 +204,28 @@ void LaneDetector::Config() {
 }
 
 void LaneDetector::Start() {
+    double time_used[6];
+    double time_sum[6];
+    int count = 0;
     while(ros::ok())
     {
         ros::spinOnce();
         if (!has_new_image)
             continue;
+            
+		auto time_1 = ros::Time::now();
+		
         cv::Mat mask(edge());
-        ROS_INFO("edge");
+        
+        auto time_2 = ros::Time::now();
+        
         //cv::imshow("mask", transformed_display_image);
         //cv::waitKey(0);
         cv::warpPerspective(mask, mask, lambda, mask.size());
         cv::warpPerspective(transformed_display_image, transformed_display_image, lambda, transformed_display_image.size());
-        ROS_INFO("warp");
+        
+        auto time_3 = ros::Time::now();
+        
         int nRows = mask.rows;
         int nCols = mask.cols;
 
@@ -231,7 +241,7 @@ void LaneDetector::Start() {
         if (has_left_lane)
         {
             left_search_center = previous_left_start;
-            ROS_INFO("has left lane");
+            //ROS_INFO("has left lane");
         } else {
 
             histogram.resize(nCols/2,0);
@@ -261,7 +271,7 @@ void LaneDetector::Start() {
 
         if (has_right_lane)
         {
-            ROS_INFO("has right lane");
+            //ROS_INFO("has right lane");
             right_search_center = previous_right_start;
         } else {
             histogram.resize(nCols, 0);
@@ -286,10 +296,14 @@ void LaneDetector::Start() {
             }
             right_search_center = index;
         }
-
-        ROS_INFO_STREAM("lc:"<<left_search_center<<"|rc:"<<right_search_center);
+		
+		auto time_4 = ros::Time::now();
+        
+        //ROS_INFO_STREAM("lc:"<<left_search_center<<"|rc:"<<right_search_center);
         has_left_lane = get_lane_points(mask, left_search_center, left_lane);
         has_right_lane = get_lane_points(mask, right_search_center, right_lane);
+        auto time_5 = ros::Time::now();
+        
         cv::imshow("transformed", transformed_display_image);
         cv::waitKey(1);
 
@@ -312,12 +326,47 @@ void LaneDetector::Start() {
             previous_right_start = right_search_center;
         }
 
-        //publish();
+        publish();
         has_new_image = false;
-
+		
+		auto time_6 = ros::Time::now();
+        
         cv::imshow("lane",raw_image);
         cv::waitKey(1);
+        
+        count += 1;
+        time_used[0] = (time_2 - time_1).toSec();
+        time_used[1] = (time_3 - time_2).toSec();
+        time_used[2] = (time_4 - time_3).toSec();
+        time_used[3] = (time_5 - time_4).toSec();
+        time_used[4] = (time_6 - time_5).toSec();
+        time_used[5] = (time_6 - time_1).toSec();
+        for (int i=0; i<6; i++)
+        {
+			time_sum[i] += time_used[i];
+		}
+		
+		/*
+        ROS_INFO_STREAM("Time used:\n"<<
+						"edge:	"<<time_used[0]<<'\n'<<
+						"tran:	"<<time_used[1]<<'\n'<<
+						"hist:	"<<time_used[2]<<'\n'<<
+						"getl:	"<<time_used[3]<<'\n'<<
+						"pub:	"<<time_used[4]<<'\n'<<
+						"total:	"<<time_used[5]<<'\n');
+		*/
+						
+		std::cout<<"Average Time used:\n"<<
+						"edge:	"<<time_sum[0]/count<<'\n'<<
+						"tran:	"<<time_sum[1]/count<<'\n'<<
+						"hist:	"<<time_sum[2]/count<<'\n'<<
+						"getl:	"<<time_sum[3]/count<<'\n'<<
+						"pub:	"<<time_sum[4]/count<<'\n'<<
+						"total:	"<<time_sum[5]/count<<'\n'<<
+						"rate:	"<<1.0/(time_sum[5]/count)<<'\n';
     }
+    
+    
 }
 
 void LaneDetector::publish() {
@@ -604,7 +653,7 @@ bool LaneDetector::get_lane_points(cv::Mat mask, int &search_center, std::vector
         y -= y_increment;
     }
 
-    ROS_INFO_STREAM("valid "<<(int)(((double)valid_count) / ((double)count)*100.0)<<'%');
+    //ROS_INFO_STREAM("valid "<<(int)(((double)valid_count) / ((double)count)*100.0)<<'%');
     return ( ((double)valid_count) / ((double)count) > 0.6);
 
 }
